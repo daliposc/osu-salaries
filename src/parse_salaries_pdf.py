@@ -1,3 +1,4 @@
+import argparse
 import re
 from pathlib import Path
 
@@ -6,29 +7,32 @@ from pdfminer.high_level import extract_text
 
 
 def parse_salaries_data(
-    in_pdf: str = None, out_txt: str = None, in_txt: str = None
-) -> list:
+    in_data: str,
+    out_txt: str = None,
+) -> list[dict]:
     """
     Parse salaries data from input PDF/text, returning a list of faculty data.
 
     Args:
-        in_pdf (str, optional): Input PDF file path. Defaults to None.
+        in_data (str, optional): Input data. Can be a .pdf or .txt.
         out_txt(str, optional): Output text file path. Defaults to None.
-        in_txt (str,optional): Input text file path. Defaults to None.
 
     Returns:
         list: List of dictionaries with faculty data for each employee.
 
     Raises:
-        ValueError: If neither in_pdf and out_txt nor in_txt is provided.
+        ValueError: If neither pdf in_data and out_txt nor txt in_data is provided.
     """
-    if in_pdf and out_txt:
-        salaries_txt = extract_text(in_pdf)
+    in_data = Path(in_data)
+    if in_data.suffix == ".pdf" and out_txt:
+        salaries_txt = extract_text(in_data)
         Path(out_txt).write_text(salaries_txt)
-    elif in_txt:
-        salaries_txt = Path(in_txt).read_text()
+    elif in_data.suffix == ".txt":
+        salaries_txt = Path(in_data).read_text()
     else:
-        raise ValueError("Either in_pdf and out_txt or in_txt must be provided")
+        raise ValueError(
+            "Either an input .pdf and output .txt, or an input .txt must be provided"
+        )
 
     clean_salaries_txt = "\n".join(
         [
@@ -136,19 +140,47 @@ def make_pd_dataframe(
     return faculty_df
 
 
-def main():
-    # faculty_data = salaries_pdf_to_txt(
-    #     in_pdf="../data/salaries.pdf",
-    #     out_txt="../data/salaries.txt",
-    # )
-    faculty_data = parse_salaries_data(in_txt="../data/salaries.txt")
-    faculty_df = make_pd_dataframe(
-        faculty_data, estimated_gender_csv="../data/names_genders_USA.csv"
+def parse_args():
+    parser = argparse.ArgumentParser(description="Process faculty salary data")
+
+    parser.add_argument(
+        "--input_data",
+        type=str,
+        help="Input file path (PDF or text)",
+    )
+    parser.add_argument(
+        "--output_txt",
+        type=str,
+        help="Output text file path (if processing PDF)",
+        default=None,
+    )
+    parser.add_argument(
+        "--estimated_gender_csv",
+        type=str,
+        help="Path to estimated gender CSV file",
+        default=None,
     )
 
-    faculty_df.to_csv("../data/salaries.csv", index=False)
-    faculty_df.to_feather("../data/salaries.feather")
+    return parser.parse_args()
 
+
+def main():
+    args = parse_args()
+    if args.input_data:
+        in_data = args.input_data
+        out_txt = args.output_txt
+        estimated_gender_csv = args.estimated_gender_csv
+    else:
+        in_data = "../data/salaries.txt"
+        out_txt = "../data/salaries.txt"
+        estimated_gender_csv = "../data/names_genders_USA.csv"
+
+    faculty_data = parse_salaries_data(in_data, out_txt)
+    faculty_df = make_pd_dataframe(faculty_data, estimated_gender_csv)
+
+    in_data_name = Path(in_data).stem
+    faculty_df.to_csv(f"../data/{in_data_name}.csv", index=False)
+    faculty_df.to_feather(f"../data/{in_data_name}.feather")
     print(faculty_df.head())
     print(faculty_df.info())
 
