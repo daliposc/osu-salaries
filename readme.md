@@ -1,0 +1,1 @@
+Oregon State University Salaries organized by department types.
