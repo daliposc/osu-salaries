@@ -1,0 +1,145 @@
+---
+title: "Salary report by instructor level"
+author: "Nick Cauldron"
+date: "2024-02-04"
+output:
+  html_document:
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data import
+
+```{r, message=FALSE, warning=FALSE}
+# Table parsing
+# remotes::install_cran("tidyverse")
+library(tidyverse)
+library(scales)
+
+# Adding gender
+# remotes::install_cran("gender")
+# remotes::install_github("lmullen/genderdata")
+library(gender)
+library(genderdata)
+```
+
+```{r}
+salary_csv_osu_2023_f <- "salaries.csv"
+
+salaries_f <- salary_csv_osu_2023_f
+salaries_raw <- read_csv(salaries_f, show_col_types = FALSE) %>%
+  janitor::clean_names()
+
+salaries_raw
+```
+
+Convert the dates to real date columns to work with them.
+For reference date we use the date the report was printed.
+I found that by hand in the header on each page of the PDF.
+This chunk also calculate some more info about how long the person has worked here.
+
+Lastly it separates out names for gender prediction in the next chunk.
+The first/middle name separation isn't perfect.
+There are some edge cases where I can't tell if there are two first names or two middle names.
+For the sake of simplicity, I use the first name following the comma as the "first name,"
+and all after are part of their "middle name"
+
+```{r clean_salary_report_dates}
+report_print_date <- dmy("17-OCT-2023")
+salaries <- salaries_raw %>%
+  # clean organization column
+  separate_wider_delim(job_orgn, delim = " - ",
+                       names = c("job_orgn_code", "job_orgn_desc"),
+                       cols_remove = FALSE, too_many = "merge") %>%
+  # clean dates
+  mutate(
+    across(c(contains("date"), contains("hired")),
+    dmy)) %>%
+  mutate(appt_worked_days = report_print_date-appt_begin_date,
+         rank_worked_days = report_print_date-rank_effective_date,
+         appt_duration_days = appt_end_date-appt_begin_date,
+         appt_remaining = appt_end_date-report_print_date) %>%
+  mutate(appt_completed = case_when(appt_remaining > 0 ~ FALSE,
+                                    appt_remaining <= 0 ~ TRUE,
+                                    is.na(appt_remaining) ~ NA)) %>%
+  # clean names - important for gender
+  separate_wider_delim(name, delim = ", ",
+                       names = c("name_last", "name_first_middle"),
+                       cols_remove = FALSE) %>%
+  separate_wider_delim(name_first_middle, delim = " ",
+                       names = c("name_first", "name_middle"),
+                       cols_remove = FALSE, too_few = "align_start", too_many = "merge") %>%
+  # If someones first name is only one letter, use their middle name instead
+  mutate(name_first = stringr::str_replace(name_first, "^\\w$", NA_character_)) %>%
+  mutate(name_first = coalesce(name_first, name_middle))
+
+glimpse(salaries)
+```
+
+Now add their expected gender.
+[A person's age is important to accurately assign gender.](https://cran.r-project.org/web/packages/gender/vignettes/predicting-gender.html).
+**I assumed an age range of**
+**18-90 years old** (born 1934-2005).
+We draw example names from Social Security Administration data in the United States from 1930-2012.
+
+A more precise naming-by-age strategy could probably be designed for some jobs.
+For example, there's a very high probability that assistant professors are younger than full professors.
+It's probably not worth expanding on that for now.
+
+```{r clean_salary_report_gender}
+yr_birth_min <- 1934
+yr_birth_max <- 2005
+salaries_names_genders <- gender(unique(salaries$name_first), method = "ssa",
+                                 years = c(yr_birth_min, yr_birth_max)) %>%
+  select(-starts_with("year_"))
+salaries_names_genders
+```
+```{r}
+# join to salary date
+# a few names were not in data,
+# leave them as missing so models are easy and binary instead of a 3rd category "unknown"
+salaries <- left_join(salaries, salaries_names_genders, by = c("name_first" = "name"))
+```
+
+Write to a file so others can join to salary data already parsed
+
+```{r}
+write_csv(salaries_names_genders, file = "names_genders_USA.csv")
+```
+
+Names assigned to gender based on simple majority rules.
+Check confidence of that strategy by looking at the distribution of gender proportions that were assigned to each gender.
+
+```{r}
+salaries_names_genders_analysis <- salaries_names_genders %>%
+  pivot_longer(cols = c("proportion_male", "proportion_female"),
+               values_to = "proportion",
+               names_to = c("gender"),
+               names_repair = "unique") %>%
+  rename("gender_assigned" = gender...2, "gender_proportions" = gender...3) %>%
+  mutate(gender_proportions = str_remove(gender_proportions, "proportion_"))
+salaries_names_genders_analysis
+ggplot(salaries_names_genders_analysis, aes(x = gender_proportions, y = proportion)) +
+  geom_jitter(width = 0.4, alpha = 0.2) +
+  geom_boxplot(outlier.shape = NA) +
+  facet_wrap(vars(gender_assigned)) +
+  labs(y = "Proportion of indivs of each gender",
+       x = "Possible genders") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank())
+```
+
+Widely, distribution of pay per gender?
+
+```{r}
+ggplot(salaries, aes(x = gender, y = annual_salary_rate)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.3, alpha = 0.2) +
+  scale_y_log10(labels = scales::comma) +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank())
+```
