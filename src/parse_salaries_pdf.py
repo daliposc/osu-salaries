@@ -1,4 +1,5 @@
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -82,15 +83,17 @@ def parse_employee_block(block: str) -> dict:
 
 
 def make_pd_dataframe(
-    faculty_data: list, estimated_gender_csv: str = None
+    faculty_data: list,
+    estimated_gender_csv: str = None,
+    department_class_map_json: str = None,
 ) -> pd.DataFrame:
     """
     Generate a pandas DataFrame from the given faculty data list, using
     specified data types for each column. And join `estimated_gender` data.
 
     Args:
-        faculty_data (list): List of faculty data. estimated_gender_csv (str,
-        optional): Path to estimated gender CSV file.
+        faculty_data (list): List of faculty data.
+        estimated_gender_csv (str, optional): Path to estimated gender CSV file.
 
     Returns:
         pd.DataFrame: Resulting pandas DataFrame.
@@ -137,6 +140,12 @@ def make_pd_dataframe(
         )
         faculty_df.drop(["first_name"], axis=1, inplace=True)
 
+    if department_class_map_json:
+        with open(department_class_map_json, "r") as dept_classes:
+            dept_class_map = json.load(dept_classes)
+        faculty_df["dept_class"] = faculty_df["job_department"].map(dept_class_map)
+        faculty_df["dept_class"] = faculty_df["dept_class"].str.upper()
+
     return faculty_df
 
 
@@ -155,9 +164,15 @@ def parse_args():
         default=None,
     )
     parser.add_argument(
-        "--estimated_gender_csv",
+        "--gender_csv",
         type=str,
         help="Path to estimated gender CSV file",
+        default=None,
+    )
+    parser.add_argument(
+        "--dept_class_json",
+        type=str,
+        help="Path to department class map JSON file",
         default=None,
     )
 
@@ -166,17 +181,22 @@ def parse_args():
 
 def main():
     args = parse_args()
+    print(args.input_data)
     if args.input_data:
         in_data = args.input_data
         out_txt = args.output_txt
-        estimated_gender_csv = args.estimated_gender_csv
+        estimated_gender_csv = args.gender_csv
+        department_class_map_json = args.dept_class_json
     else:
         in_data = "../data/salaries.txt"
         out_txt = "../data/salaries.txt"
         estimated_gender_csv = "../data/names_genders_USA.csv"
+        department_class_map_json = "../data/depts.json"
 
     faculty_data = parse_salaries_data(in_data, out_txt)
-    faculty_df = make_pd_dataframe(faculty_data, estimated_gender_csv)
+    faculty_df = make_pd_dataframe(
+        faculty_data, estimated_gender_csv, department_class_map_json
+    )
 
     in_data_name = Path(in_data).stem
     faculty_df.to_csv(f"../data/{in_data_name}.csv", index=False)

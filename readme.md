@@ -5,7 +5,17 @@ Downloaded from HR website ( [link to site](https://hr.oregonstate.edu/employees
 ) on
 2024-02-03.
 
+## Department Classes:
+- `A`: Administrative
+- `B`: Business and Finance
+- `E`: Engineering
+- `L`: Liberal Arts
+- `M`: Maintenance and Utilities
+- `S`: Science
+- `X`: Extension
+
 ## Options if using as a CLI
 - `--input_data`: salaries.pdf or converted salaries.txt
 - `--out_txt` (optional): path to .txt output of converted .pdf
-- `--estimated_gender_csv` (optional): path to estimated gender .csv
+- `--gender_csv` (optional): path to estimated gender .csv
+- `--dept_class_json` (optional): path to department class json file to be read into a python dict
